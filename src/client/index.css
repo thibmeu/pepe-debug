@@ -1,0 +1,42 @@
+body {
+    font-family: Arial, sans-serif;
+    width: 90%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+    body {
+        width: 85%;
+        padding: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        width: 80%;
+    }
+}
+
+code {
+    display: block;
+    background-color: #f4f4f4;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.display:empty {
+    display: none;
+}
+
+input {
+    width: 20em;
+}

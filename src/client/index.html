@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pépé Debug 👴💻</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👴</text></svg>">
+    <link href="./index.css" rel="stylesheet" />
+    <script src="./index.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Pépé Debug 👴💻</h1>
+        <p>Pépé helps you debug Privacy Pass. If you want to contribute, check out the <a href="https://github.com/thibmeu/pepe-debug">source</a>.</p>
+    </header>
+    <main>
+        <section id="extension">
+            <h2>Extension installed</h2>
+            <p>
+                Checks which version of Privacy pass extension is installed. This is done purely in browser.
+            </p>
+        
+            <div class="flex">
+                <p class="display">
+                    <span id="ddlfibfbmmlkjnhfjmfaeldojjdbgckd"><span class="status">❔</span> <a href="https://bitbucket.cfdata.org/projects/CRYPTO/repos/pp-browser-extension/browse">Development</a></span>
+                    <span id="pkdafepcfhhkplolkgncdhcmnhhaccjl"><span class="status">❔</span> <a href="https://chrome.google.com/webstore/detail/ppv4/pkdafepcfhhkplolkgncdhcmnhhaccjl">Internal</a></span>
+                    <span id="ajhmfdgkijocedmfjonnpjfojldioehi"><span class="status">❔</span> <a href="https://chrome.google.com/webstore/detail/ppv4/ajhmfdgkijocedmfjonnpjfojldioehi">Public</a></span>
+                </p>
+                <form>
+                    <button>Update</button>
+                </form>
+            </div>
+        </section>
+        <section id="issuers">
+            <h2>Fetch from issuer URL</h2>
+            <p>
+                Fetch and validate <a href="https://www.ietf.org/archive/id/draft-ietf-privacypass-protocol-11.html#name-configuration">directory issuer response</a>.
+                Issuer directory URL SHOULD ends with "/.well-known/private-token-issuer-directory", even though this is not enforced in this interface.
+            </p>
+
+            <form>
+                <input placeholder="https://example.com/.well-known/token-issuer-directory" required />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+        <section id="validate">
+            <h2>Validate public key</h2>
+            <p>
+                Given a Privacy Pass issuer encoded public key, checks if it can be imported in your browser.
+                This only supports type 2 key at the moment, encoded as <a href="https://github.com/ietf-wg-privacypass/base-drafts/blob/main/draft-ietf-privacypass-protocol.md#token-type-blind-rsa-2048-bit-public-token-type">in the spec</a>.
+            </p>
+
+            <form>
+                <input placeholder="MIIBIjA..." required />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+        <section id="create">
+            <h2>Create challenge</h2>
+            <p>
+                Create a challenge based on the provided issuer keys.
+            </p>
+
+            <form>
+                <input placeholder="MIIBIjA...1" required/>
+                <input placeholder="example.com" required/>
+                <br />
+                <input placeholder="MIIBIjA...2" />
+                <input placeholder="example.com" />
+                <br />
+                <input placeholder="MIIBIjA...3" />
+                <input placeholder="example.com" />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+        <section id="challenge">
+            <h2>Inspect challenge</h2>
+            <p>
+                If you inspect HTTP request in your network tab, and want to copy/paste WWW-Authenticate header to understand what's inside.
+            </p>
+
+            <form>
+                <input placeholder="PrivateToken challenge=..." required />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+        <section id="trigger">
+            <h2>Trigger origin challenge</h2>
+            <p>
+                Request the local server to trigger a Privacy pass challenge with the provided WWW-Authenticate header. Behaviour is going to change depending on your platform implementation.
+            </p>
+
+            <form>
+                <input placeholder="PrivateToken challenge=..." required />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+        <section id="token">
+            <h2>Inspect token</h2>
+            <p>
+                If you inspect HTTP request in your network tab, and want to copy/paste Authorization header to understand what's inside.
+            </p>
+
+            <form>
+                <input placeholder="PrivateToken token=..." required />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+    </main>
+    <footer>
+        <p>Built and developed by <a href="https://github.com/thibmeu">thibmeu</a></p>
+    </footer>
+    <script>
+        const autofill = (id) => (...values) => {
+            const section = document.querySelector(`section#${id}`)
+            const form = section.querySelector('form')
+
+            const input = Array.from(form.querySelectorAll('input'))
+            for (const i in values) {
+                if (i >= input.length) {
+                    return
+                }
+                input[i].value = values[i]
+            }
+        }
+
+        const setup = (id, transform, autofillIDs) => {
+            const section = document.querySelector(`section#${id}`)
+            const form = section.querySelector('form')
+
+            const fills = autofillIDs?.map(id => autofill(id))
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault()
+
+                const section = document.querySelector(`section#${id}`)
+                const form = section.querySelector('form')
+                const input = Array.from(form.querySelectorAll('input')).map(e => e.value)
+
+                const display = section.querySelector('.display')
+                const result = await transform(...input)
+                display.textContent = result.toString()
+                fills?.map(fill => fill(...result.toFill()))
+            })
+        }
+
+        const setupExtension = () => {
+            const id = 'extension'
+            const section = document.querySelector(`section#${id}`)
+            const form = section.querySelector('form')
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault()
+
+                const section = document.querySelector(`section#${id}`)
+                const form = section.querySelector('form')
+
+                const display = section.querySelector('p.display')
+                const extensions = Array.from(display.children)
+                
+                const installed = []
+                for (const extension of extensions) {
+                    const emoji = await checkExtension(extension.id) ? '✅' : '❌'
+                    const status = extension.querySelector('.status')
+                    status.textContent = emoji
+                }
+            })
+        }
+
+        const onload = () => {
+            setupExtension()
+            setup('issuers', fetchIssuers, ['validate', 'create'])
+            setup('validate', validatePublicKey)
+            setup('create', createChallenge, ['challenge', 'trigger'])
+            setup('challenge', challengeParse)
+            setup('trigger', challengeTrigger)
+            setup('token', tokenParse)
+        }
+
+        window.addEventListener('load', onload)
+    </script>
+</body>
+</html>
