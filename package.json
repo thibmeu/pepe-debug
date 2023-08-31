@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@cloudflare/blindrsa-ts": "^0.1.0",
-    "@cloudflare/privacypass-ts": "^0.2.1"
+    "@cloudflare/privacypass-ts": "^0.3.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

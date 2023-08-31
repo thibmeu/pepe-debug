@@ -1,4 +1,10 @@
-import * as privacypass from "@cloudflare/privacypass-ts";
+import {
+  MediaType,
+  PrivateToken,
+  TOKEN_TYPES,
+  header_to_token,
+  util,
+} from "@cloudflare/privacypass-ts";
 
 const u8ToB64 = (u: Uint8Array): string => btoa(String.fromCharCode(...u));
 
@@ -64,7 +70,7 @@ const checkExtension = async (id: string): Promise<boolean> => {
 
 const parsePublicKey = async (pk: string): Promise<CryptoKey> => {
   const pkEnc = b64Tou8(b64URLtoB64(pk));
-  const spkiEncoded = privacypass.util.convertRSASSAPSSToEnc(pkEnc);
+  const spkiEncoded = util.convertRSASSAPSSToEnc(pkEnc);
   return crypto.subtle.importKey(
     "spki",
     spkiEncoded,
@@ -93,12 +99,12 @@ const fetchIssuers = async (url: string): Promise<TransformResult> => {
   const out: string[] = [];
   if (
     response.headers.get("content-type") !==
-    privacypass.issuance.MediaType.PRIVATE_TOKEN_ISSUER_DIRECTORY
+    MediaType.PRIVATE_TOKEN_ISSUER_DIRECTORY
   ) {
     out.push(
       `Response content type ${response.headers.get(
         "content-type",
-      )} does not match protocol ${privacypass.issuance.MediaType.PRIVATE_TOKEN_ISSUER_DIRECTORY}`,
+      )} does not match protocol ${MediaType.PRIVATE_TOKEN_ISSUER_DIRECTORY}`,
     );
   }
   const issuers = await response.json();
@@ -129,7 +135,8 @@ const createChallenge = async (
   for (const issuer of issuers) {
     const redemptionContext = crypto.getRandomValues(new Uint8Array(32));
     const originInfo = [new URL(window.origin).host];
-    const tokChl = await privacypass.pubVerfiToken.createPrivateToken(
+    const tokChl = await PrivateToken.create(
+      TOKEN_TYPES.BLIND_RSA,
       issuer,
       redemptionContext,
       originInfo,
@@ -141,7 +148,7 @@ const createChallenge = async (
 };
 
 const challengeParse = async (challenge: string): Promise<TransformResult> => {
-  const tokens = await privacypass.httpAuthScheme.PrivateToken.parseMultiple(challenge);
+  const tokens = PrivateToken.parseMultiple(challenge);
   const infos = tokens.map((token) => ({
     challenge: {
       tokenType: token.challenge.tokenType,
@@ -173,7 +180,7 @@ const tokenParse = async (token: string) => {
 };
 
 const challengeDebug = async (challenge: string) => {
-  return privacypass.header_to_token(challenge);
+  return header_to_token(challenge);
 };
 
 const notImplemented = async () => "not implemented";
