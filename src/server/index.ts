@@ -28,10 +28,11 @@ function getCurrentTimeFormatted() {
 }
 
 const handleDist = (req: http.IncomingMessage, res: http.ServerResponse) => {
-  if (req.url === "/") {
-    req.url = "/index.html";
+  let pathname = req.url?.split("?")[0] ?? "/";
+  if (pathname === "/") {
+    pathname = "/index.html";
   }
-  const requestPath = path.normalize(req.url?.slice(1) ?? "");
+  const requestPath = path.normalize(pathname.slice(1) ?? "");
   const filePath = path.join(__dirname, "../../dist", requestPath);
 
   if (!fs.existsSync(filePath)) {

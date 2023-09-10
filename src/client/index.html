@@ -142,6 +142,15 @@
             const section = document.querySelector(`section#${id}`)
             const form = section.querySelector('form')
 
+            // prefills form if shared via a link
+            const query = new URL(window.location.href).searchParams.getAll(id)
+            if (query) {
+                const input = Array.from(form.querySelectorAll('input'))
+                for (const i in query) {
+                    input[i].value = query[i]
+                }
+            }
+
             const fills = autofillIDs?.map(id => autofill(id))
 
             form.addEventListener('submit', async (event) => {
