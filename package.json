@@ -15,7 +15,7 @@
   "homepage": "https://github.com/thimeu/pepe-debug",
   "repository": "github:thibmeu/pepe-debug",
   "engines": {
-      "node": ">=18"
+    "node": ">=18"
   },
   "scripts": {
     "build": "mkdir -p dist && cp src/client/index.html ./dist/index.html  && cp src/client/index.css ./dist/index.css && esbuild src/client/index.ts --bundle --minify --sourcemap --target=chrome100 --outdir=dist",
@@ -26,8 +26,8 @@
     "start": "concurrently \"npm:build:watch\" \"npm:serve:watch\" \"sleep 1 && open http://localhost:3000\""
   },
   "dependencies": {
-    "@cloudflare/blindrsa-ts": "^0.1.0",
-    "@cloudflare/privacypass-ts": "^0.3.0"
+    "@cloudflare/privacypass-ts": "file:vendor/cloudflare-privacypass-ts-0.3.0.tgz",
+    "asn1js": "^3.0.5"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

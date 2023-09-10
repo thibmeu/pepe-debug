@@ -2,9 +2,12 @@ import {
   MediaType,
   PrivateToken,
   TOKEN_TYPES,
+  Token,
+  TokenChallenge,
   header_to_token,
   util,
 } from "@cloudflare/privacypass-ts";
+import * as asn1 from "asn1js";
 
 const u8ToB64 = (u: Uint8Array): string => btoa(String.fromCharCode(...u));
 
@@ -18,7 +21,7 @@ const b64URLtoB64 = (s: string): string =>
   s.replace(/-/g, "+").replace(/_/g, "/");
 
 const LOCAL_URL = window.origin;
-const ECHO_URL = `${LOCAL_URL}/echo`;
+const ECHO_URL = `${LOCAL_URL}/echo-authentication`;
 const PROXY_URL = `${LOCAL_URL}/proxy`;
 
 class TransformResult {
@@ -37,14 +40,6 @@ class TransformResult {
     return this._fill;
   }
 }
-
-const isLocalServerAvailable = async (): Promise<boolean> => {
-  const response = await fetch(ECHO_URL, {
-    method: "POST",
-    headers: { test: "1" },
-  });
-  return response.headers["test"] === "1";
-};
 
 const proxyFetch = (url: string, init?: RequestInit) => {
   const request = new URL(PROXY_URL);
@@ -83,7 +78,10 @@ const parsePublicKey = async (pk: string): Promise<CryptoKey> => {
 const validatePublicKey = async (pk: string): Promise<TransformResult> => {
   try {
     const _ = await parsePublicKey(pk);
-    return new TransformResult("Valid");
+    const debugASN1 = (
+      asn1.fromBER(b64Tou8(b64URLtoB64(pk))).result.valueBlock as any
+    ).value.toString();
+    return new TransformResult(debugASN1);
   } catch (e) {
     return new TransformResult(e.message);
   }
@@ -108,6 +106,17 @@ const fetchIssuers = async (url: string): Promise<TransformResult> => {
     );
   }
   const issuers = await response.json();
+  issuers["token-keys"] = issuers["token-keys"].map((key) =>
+    Object.assign({}, key, {
+      // the convertion is here to ensure there are no formatting issue
+      // keys need to be encoded as RSAPSS
+      "token-key": b64ToB64URL(
+        u8ToB64(
+          util.convertEncToRSASSAPSS(b64Tou8(b64URLtoB64(key["token-key"]))),
+        ),
+      ),
+    }),
+  );
   out.push(JSON.stringify(issuers, null, 2));
   return new TransformResult(
     out.join("\n"),
@@ -121,34 +130,35 @@ const fetchIssuers = async (url: string): Promise<TransformResult> => {
 const createChallenge = async (
   ...issuersInfo: string[]
 ): Promise<TransformResult> => {
-  let issuers: { name: string; publicKey: CryptoKey }[] = [];
+  let issuers: { name: string; publicKey: Uint8Array }[] = [];
   for (let i = 0; i < issuersInfo.length; i += 2) {
     const publicKey = issuersInfo[i];
     const name = issuersInfo[i + 1];
     if (publicKey === "") {
       continue;
     }
-    issuers.push({ name, publicKey: await parsePublicKey(publicKey) });
+    issuers.push({ name, publicKey: b64Tou8(b64URLtoB64(publicKey)) });
   }
 
   let out: string[] = [];
   for (const issuer of issuers) {
     const redemptionContext = crypto.getRandomValues(new Uint8Array(32));
     const originInfo = [new URL(window.origin).host];
-    const tokChl = await PrivateToken.create(
-      TOKEN_TYPES.BLIND_RSA,
-      issuer,
+    const tokChl = new TokenChallenge(
+      TOKEN_TYPES.BLIND_RSA.value,
+      issuer.name,
       redemptionContext,
       originInfo,
     );
-    out.push(await tokChl.toString());
+    const privateToken = new PrivateToken(tokChl, issuer.publicKey);
+    out.push(privateToken.toString(true));
   }
   const challenge = out.join(", ");
   return new TransformResult(challenge, challenge);
 };
 
 const challengeParse = async (challenge: string): Promise<TransformResult> => {
-  const tokens = PrivateToken.parseMultiple(challenge);
+  const tokens = PrivateToken.parse(challenge);
   const infos = tokens.map((token) => ({
     challenge: {
       tokenType: token.challenge.tokenType,
@@ -165,18 +175,31 @@ const challengeTrigger = async (
   challenge: string,
 ): Promise<TransformResult> => {
   try {
-    const _response = await fetch(ECHO_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain", "WWW-Authenticate": challenge },
+    const response = await fetch(ECHO_URL, {
+      headers: { "WWW-Authenticate": challenge },
     });
-    return new TransformResult("Challenge triggered");
+    const token = await response.text();
+    return new TransformResult(token, token);
   } catch (e) {
     return new TransformResult(e.message);
   }
 };
 
 const tokenParse = async (token: string) => {
-  return notImplemented();
+  const t = Token.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
+  return new TransformResult(
+    JSON.stringify(
+      {
+        "token-type": t.payload.tokenType,
+        "token-key-id": b64ToB64URL(u8ToB64(t.payload.tokenKeyId)),
+        nonce: b64ToB64URL(u8ToB64(t.payload.nonce)),
+        challengeDigest: b64ToB64URL(u8ToB64(t.payload.challengeDigest)),
+        authenticator: b64ToB64URL(u8ToB64(t.authenticator)),
+      },
+      null,
+      2,
+    ),
+  );
 };
 
 const challengeDebug = async (challenge: string) => {
@@ -187,7 +210,6 @@ const notImplemented = async () => "not implemented";
 
 const onload = () => {
   Object.assign(window, {
-    isLocalServerAvailable,
     checkExtension,
     validatePublicKey,
     fetchIssuers,

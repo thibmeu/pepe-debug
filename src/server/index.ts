@@ -1,7 +1,7 @@
 // Local server to improve web development on port 3000
 // GET serves content from `dist`, which builds the frontend
 // POST has two targets
-// POST /echo <body> returns the request body with the request headers
+// POST /echo-authentication returns the request WWW-Authenticate header if passed. If Authorization header is found, returns it in the response body
 // POST /proxy?target=<url> query the target url with the request headers and returns the response unmodified
 import fs from "fs";
 import http from "http";
@@ -60,15 +60,32 @@ const handleDist = (req: http.IncomingMessage, res: http.ServerResponse) => {
 };
 
 const handleEcho = (req: http.IncomingMessage, res: http.ServerResponse) => {
-  let requestBody = "";
-  req.on("data", (chunk) => {
-    requestBody += chunk.toString();
-  });
+  req.on("data", (chunk) => undefined);
 
   req.on("end", () => {
-    res.writeHead(200, req.headers);
+    const status = req.headers["authorization"] ? 200 : 401;
+    const headers: http.OutgoingHttpHeaders = {
+      "content-type": "text/plain; charset=utf-8",
+      date: new Date().toUTCString(),
+    };
+    const authenticationRequest = req.headers["www-authenticate"];
+    if (authenticationRequest) {
+      console.log(
+        `[${getCurrentTimeFormatted()}]\tWWW-Authenticate ${authenticationRequest}`,
+      );
+      headers["www-authenticate"] = authenticationRequest;
+    } else {
+      console.log(
+        `[${getCurrentTimeFormatted()}]\tAuthorization ${
+          req.headers.authorization
+        }`,
+      );
+    }
 
-    res.end(requestBody);
+    res.writeHead(status, headers);
+
+    const response = status === 200 ? req.headers.authorization : "J";
+    res.end(response);
   });
 };
 
@@ -113,11 +130,11 @@ const server = http.createServer((req, res) => {
   console.log(`[${getCurrentTimeFormatted()}]\t${req.method}\t${req.url}`);
   switch (req.method) {
     case "GET":
-      return handleDist(req, res);
-    case "POST": {
-      if (req.url?.startsWith("/echo")) {
+      if (req.url?.startsWith("/echo-authentication")) {
         return handleEcho(req, res);
       }
+      return handleDist(req, res);
+    case "POST": {
       if (req.url?.startsWith("/proxy")) {
         return handleProxy(req, res);
       }
