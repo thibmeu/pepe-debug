@@ -175,9 +175,31 @@ const challengeTrigger = async (
   challenge: string,
 ): Promise<TransformResult> => {
   try {
-    const response = await fetch(ECHO_URL, {
+    const API_REPLAY_DELAY_IN_MS = 100;
+    const API_REPLAY_HEADER = "private-token-client-replay";
+    const API_REPLAY_URL =
+      "https://no-reply.private-token.research.cloudflare.com";
+
+    let response = await fetch(ECHO_URL, {
       headers: { "WWW-Authenticate": challenge },
     });
+    // Client replay API when not supported by the platform
+    const requestID = response.headers.get(API_REPLAY_HEADER);
+    if (requestID) {
+      const wait = () =>
+        fetch(`${API_REPLAY_URL}?requestID=${requestID}`).then(
+          async (response) => {
+            const state = await response.text();
+            return state === "pending";
+          },
+        );
+      while (await wait()) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, API_REPLAY_DELAY_IN_MS),
+        );
+      }
+      response = await fetch(ECHO_URL);
+    }
     const token = await response.text();
     return new TransformResult(token, token);
   } catch (e) {
