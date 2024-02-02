@@ -145,7 +145,7 @@
             // prefills form if shared via a link
             const query = new URL(window.location.href).searchParams.getAll(id)
             if (query) {
-                const input = Array.from(form.querySelectorAll('input'))
+                const input = Array.from(form.querySelectorAll(':scope > input'))
                 for (const i in query) {
                     input[i].value = query[i]
                 }
