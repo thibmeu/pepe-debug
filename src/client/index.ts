@@ -207,6 +207,11 @@ const challengeTrigger = async (
       }
       response = await fetch(ECHO_URL);
     }
+    if (!response.ok && response.headers.get("WWW-Authenticate")) {
+      throw new Error(
+        `Challenge has been triggered, but the platform failed to return an Authorization header. Status: ${response.status} ${response.statusText}`,
+      );
+    }
     const token = await response.text();
     return new TransformResult(token, token);
   } catch (e) {
