@@ -159,15 +159,22 @@ const createChallenge = async (
 
 const challengeParse = async (challenge: string): Promise<TransformResult> => {
   const tokens = PrivateToken.parse(challenge);
-  const infos = tokens.map((token) => ({
-    challenge: {
-      tokenType: token.challenge.tokenType,
-      name: token.challenge.issuerName,
-      origin: token.challenge.originInfo,
-    },
-    tokenKey: b64ToB64URL(u8ToB64(token.tokenKey)),
-    maxAge: token.maxAge,
-  }));
+  const infos = await Promise.all(
+    tokens.map(async (token) => ({
+      challenge: {
+        tokenType: token.challenge.tokenType,
+        name: token.challenge.issuerName,
+        origin: token.challenge.originInfo,
+      },
+      tokenKey: b64ToB64URL(u8ToB64(token.tokenKey)),
+      tokenKeyId: b64ToB64URL(
+        u8ToB64(
+          new Uint8Array(await crypto.subtle.digest("SHA-256", token.tokenKey)),
+        ),
+      ),
+      maxAge: token.maxAge,
+    })),
+  );
   return new TransformResult(JSON.stringify(infos, null, 2));
 };
 
@@ -209,6 +216,9 @@ const challengeTrigger = async (
 
 const tokenParse = async (token: string) => {
   const t = Token.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
+  if (!t) {
+    return new TransformResult("Cannot parse token.");
+  }
   return new TransformResult(
     JSON.stringify(
       {
