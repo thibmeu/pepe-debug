@@ -1,9 +1,12 @@
 import {
+  Client,
   MediaType,
   PrivateToken,
   TOKEN_TYPES,
   Token,
   TokenChallenge,
+  TokenRequest,
+  TokenResponse,
   header_to_token,
   util,
 } from "@cloudflare/privacypass-ts";
@@ -46,7 +49,6 @@ const proxyFetch = (url: string, init?: RequestInit) => {
   request.searchParams.append("target", url);
 
   const params = init ?? {};
-  params.method = "POST";
 
   return fetch(request, params);
 };
@@ -123,6 +125,7 @@ const fetchIssuers = async (url: string): Promise<TransformResult> => {
     ...issuers["token-keys"].flatMap((key) => [
       key["token-key"],
       new URL(url).host,
+      `${new URL(url).origin}${issuers["issuer-request-uri"]}`, // note this won't work if issuer-request-uri is absolute
     ]),
   );
 };
@@ -165,6 +168,9 @@ const challengeParse = async (challenge: string): Promise<TransformResult> => {
         tokenType: token.challenge.tokenType,
         name: token.challenge.issuerName,
         origin: token.challenge.originInfo,
+        redemptionContext: b64ToB64URL(
+          u8ToB64(token.challenge.redemptionContext),
+        ),
       },
       tokenKey: b64ToB64URL(u8ToB64(token.tokenKey)),
       tokenKeyId: b64ToB64URL(
@@ -219,6 +225,72 @@ const challengeTrigger = async (
   }
 };
 
+const tokenRequest = async (pk: string, url: string, challenge: string) => {
+  const tokens = PrivateToken.parse(challenge);
+  const publicKey = await parsePublicKey(pk); // always the public key of the first token
+  for (const token of tokens) {
+    const result: string[] = [];
+    const client = new Client();
+    let validToken: Token;
+    try {
+      const request = await client.createTokenRequest(token);
+      const response = await proxyFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": MediaType.PRIVATE_TOKEN_REQUEST,
+          Accept: MediaType.PRIVATE_TOKEN_RESPONSE,
+        },
+        body: request.serialize(),
+      });
+
+      const tokenResponse = TokenResponse.deserialize(
+        new Uint8Array(await response.arrayBuffer()),
+      );
+      validToken = await client.finalize(tokenResponse);
+      result.push(
+        `Draft 16 Valid: ${
+          (await validToken.verify(publicKey)) &&
+          response.headers.get("Content-Type") ===
+            MediaType.PRIVATE_TOKEN_RESPONSE
+        }`,
+      );
+      result.push(validToken.toString());
+    } catch (e) {
+      return new TransformResult(e.message);
+    }
+
+    // Test old protocol which has not been standardised
+    try {
+      const request = await client.createTokenRequest(token);
+      const oldProtocolResponse = await proxyFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "message/token-request",
+          Accept: "message/token-response",
+        },
+        body: request.serialize(),
+      });
+
+      const tokenResponse = TokenResponse.deserialize(
+        new Uint8Array(await oldProtocolResponse.arrayBuffer()),
+      );
+      const validOldToken = await client.finalize(tokenResponse);
+      result.push(
+        `Draft 2 Valid: ${
+          (await validOldToken.verify(publicKey)) &&
+          oldProtocolResponse.headers.get("Content-Type") ===
+            "message/token-response"
+        }`,
+      );
+    } catch (e) {
+      console.log(e);
+      // ignore if the old protocol is not supported
+    }
+
+    return new TransformResult(result.join("\n"), validToken.toString());
+  }
+};
+
 const tokenParse = async (token: string) => {
   const t = Token.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
   if (!t) {
@@ -253,6 +325,7 @@ const onload = () => {
     createChallenge,
     challengeParse,
     challengeTrigger,
+    tokenRequest,
     tokenParse,
     challengeDebug,
     notImplemented,

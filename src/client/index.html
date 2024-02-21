@@ -70,12 +70,15 @@
             <form>
                 <input placeholder="MIIBIjA...1" required/>
                 <input placeholder="example.com" required/>
+                <input type="hidden" />
                 <br />
                 <input placeholder="MIIBIjA...2" />
                 <input placeholder="example.com" />
+                <input type="hidden" />
                 <br />
                 <input placeholder="MIIBIjA...3" />
                 <input placeholder="example.com" />
+                <input type="hidden" />
                 <button>Submit</button>
             </form>
         
@@ -101,6 +104,31 @@
             </p>
 
             <form>
+                <input placeholder="PrivateToken challenge=..." required />
+                <button>Submit</button>
+            </form>
+        
+            <code class="display"></code>
+        </section>
+        <section id="request">
+            <h2>Send Token Request</h2>
+            <p>
+                Send a token request directly to the issuer. This only works if the agent you are on is able to reach the issuer.
+            </p>
+
+            <form>
+                <input placeholder="MIIBIjA...1" required />
+                <input type="hidden" />
+                <input placeholder="https://example.com/token-request" required />
+                <br />
+                <!-- Replace the autofill with an ID based filling system -->
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
                 <input placeholder="PrivateToken challenge=..." required />
                 <button>Submit</button>
             </form>
@@ -158,7 +186,7 @@
 
                 const section = document.querySelector(`section#${id}`)
                 const form = section.querySelector('form')
-                const input = Array.from(form.querySelectorAll('input')).map(e => e.value)
+                const input = Array.from(form.querySelectorAll('input:not([type="hidden"])')).map(e => e.value)
 
                 const display = section.querySelector('.display')
                 const result = await transform(...input)
@@ -192,11 +220,12 @@
 
         const onload = () => {
             setupExtension()
-            setup('issuers', fetchIssuers, ['validate', 'create'])
+            setup('issuers', fetchIssuers, ['validate', 'create', 'request'])
             setup('validate', validatePublicKey)
             setup('create', createChallenge, ['challenge', 'trigger'])
             setup('challenge', challengeParse)
             setup('trigger', challengeTrigger, ['token'])
+            setup('request', tokenRequest)
             setup('token', tokenParse)
         }
 

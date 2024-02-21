@@ -91,8 +91,14 @@ const handleEcho = (req: http.IncomingMessage, res: http.ServerResponse) => {
 };
 
 const handleProxy = (req: http.IncomingMessage, res: http.ServerResponse) => {
-  req.on("data", () => undefined);
+  const body: Uint8Array[] = [];
+  req.on("data", (chunk: Buffer) => {
+    if (req.method === "POST") {
+      body.push(new Uint8Array(chunk));
+    }
+  });
   req.on("end", async () => {
+    const data = new Uint8Array(Buffer.concat(body));
     const url = new URL(`http://test.test${req.url}`);
     const targetUrl = url.searchParams.get("target");
 
@@ -109,12 +115,22 @@ const handleProxy = (req: http.IncomingMessage, res: http.ServerResponse) => {
     let headers = Object.entries(req.headers).filter(
       (h) => h !== undefined,
     ) as [string, string][];
-    const response = await fetch(targetUrl, {
+    const params: {
+      body?: Uint8Array | null;
+      method?: string;
+      headers?: [string, string][];
+    } = {
+      method: req.method,
       headers,
-    });
-    const responseData = await response.text();
+    };
+    if (req.method === "POST") {
+      params.body = data;
+    }
+    const response = await fetch(targetUrl, params);
+    const responseData = new Uint8Array(await response.arrayBuffer());
 
-    res.writeHead(response.status, headers);
+    console.log(response.headers);
+    res.writeHead(response.status, [...response.headers.entries()]);
     res.end(responseData);
   });
 };
@@ -129,18 +145,15 @@ const handleNotFound = (
 
 const server = http.createServer((req, res) => {
   console.log(`[${getCurrentTimeFormatted()}]\t${req.method}\t${req.url}`);
+  if (req.url?.startsWith("/proxy")) {
+    return handleProxy(req, res);
+  }
   switch (req.method) {
     case "GET":
       if (req.url?.startsWith("/echo-authentication")) {
         return handleEcho(req, res);
       }
       return handleDist(req, res);
-    case "POST": {
-      if (req.url?.startsWith("/proxy")) {
-        return handleProxy(req, res);
-      }
-      return handleNotFound(req, res);
-    }
     default:
       return handleNotFound(req, res);
   }
