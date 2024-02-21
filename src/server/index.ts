@@ -129,7 +129,6 @@ const handleProxy = (req: http.IncomingMessage, res: http.ServerResponse) => {
     const response = await fetch(targetUrl, params);
     const responseData = new Uint8Array(await response.arrayBuffer());
 
-    console.log(response.headers);
     res.writeHead(response.status, [...response.headers.entries()]);
     res.end(responseData);
   });
