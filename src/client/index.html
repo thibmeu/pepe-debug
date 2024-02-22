@@ -148,6 +148,29 @@
         
             <code class="display"></code>
         </section>
+        <section id="check-token">
+            <h2>Verify token</h2>
+            <p>
+                Check that your token is valid against the issuer public key, for the challenge you received.
+            </p>
+
+            <form>
+                <input placeholder="MIIBIjA...1" required />
+                <br />
+                <!-- Replace the autofill with an ID based filling system -->
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input type="hidden" />
+                <input placeholder="PrivateToken token=..." required />
+                <button>Submit</button>
+            </form>
+
+            <code class="display"></code>
+        </section>
     </main>
     <footer>
         <p>Built and developed by <a href="https://github.com/thibmeu">thibmeu</a></p>
@@ -220,13 +243,14 @@
 
         const onload = () => {
             setupExtension()
-            setup('issuers', fetchIssuers, ['validate', 'create', 'request'])
+            setup('issuers', fetchIssuers, ['validate', 'create', 'request', 'check-token'])
             setup('validate', validatePublicKey)
             setup('create', createChallenge, ['challenge', 'trigger'])
             setup('challenge', challengeParse)
             setup('trigger', challengeTrigger, ['token'])
             setup('request', tokenRequest, ['token'])
             setup('token', tokenParse)
+            setup('check-token', tokenVerify)
         }
 
         window.addEventListener('load', onload)

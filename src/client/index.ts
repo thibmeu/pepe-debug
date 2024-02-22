@@ -311,6 +311,16 @@ const tokenParse = async (token: string) => {
   );
 };
 
+const tokenVerify = async (pk: string, token: string) => {
+  const publicKey = await parsePublicKey(pk);
+  const responseToken = Token.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
+
+  if (await responseToken.verify(publicKey)) {
+    return new TransformResult("Token matches the public key.");
+  }
+  return new TransformResult("Token does not match the public key.");
+};
+
 const challengeDebug = async (challenge: string) => {
   return header_to_token(challenge);
 };
@@ -327,6 +337,7 @@ const onload = () => {
     challengeTrigger,
     tokenRequest,
     tokenParse,
+    tokenVerify,
     challengeDebug,
     notImplemented,
   });

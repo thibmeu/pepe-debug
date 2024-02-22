@@ -129,7 +129,14 @@ const handleProxy = (req: http.IncomingMessage, res: http.ServerResponse) => {
     const response = await fetch(targetUrl, params);
     const responseData = new Uint8Array(await response.arrayBuffer());
 
-    res.writeHead(response.status, [...response.headers.entries()]);
+    const responseHeaders: http.OutgoingHttpHeader[] = [];
+    if (response.headers.get("content-type")) {
+      responseHeaders.push([
+        "Content-Type",
+        response.headers.get("content-type")!,
+      ]);
+    }
+    res.writeHead(response.status, responseHeaders);
     res.end(responseData);
   });
 };
