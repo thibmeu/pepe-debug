@@ -1,14 +1,13 @@
 import {
-  Client,
+  AuthorizationHeader,
   IssuerConfig,
   MediaType,
-  PrivateToken,
   TOKEN_TYPES,
   Token,
   TokenChallenge,
-  TokenRequest,
-  TokenResponse,
+  WWWAuthenticateHeader,
   header_to_token,
+  publicVerif,
   util,
 } from "@cloudflare/privacypass-ts";
 import * as asn1 from "asn1js";
@@ -28,7 +27,9 @@ const LOCAL_URL = window.origin;
 const ECHO_URL = `${LOCAL_URL}/echo-authentication`;
 const PROXY_URL = `${LOCAL_URL}/proxy`;
 
-const SUPPORTED_TOKEN_TYPES = Object.values(TOKEN_TYPES).map(tokenType => tokenType.value);
+const SUPPORTED_TOKEN_TYPES = Object.values(TOKEN_TYPES).map(
+  (tokenType) => tokenType.value,
+);
 
 class TransformResult {
   private _string: string;
@@ -68,10 +69,18 @@ const parsePublicKey = async (pk: string): Promise<CryptoKey> => {
   );
 };
 
-const validatePublicKey = async ({ type, key: pk }: { type: string, key: string }): Promise<TransformResult> => {
+const validatePublicKey = async ({
+  type,
+  key: pk,
+}: {
+  type: string;
+  key: string;
+}): Promise<TransformResult> => {
   const tokenType = Number.parseInt(type);
   if (!SUPPORTED_TOKEN_TYPES.includes(tokenType)) {
-    return new TransformResult(`Token type 0x${tokenType.toString(16)} is not supported.`);
+    return new TransformResult(
+      `Token type 0x${tokenType.toString(16)} is not supported.`,
+    );
   }
 
   try {
@@ -85,7 +94,11 @@ const validatePublicKey = async ({ type, key: pk }: { type: string, key: string 
   }
 };
 
-const fetchIssuers = async ({ "issuer-directory-uri": url }: { "issuer-directory-uri": string }): Promise<TransformResult> => {
+const fetchIssuers = async ({
+  "issuer-directory-uri": url,
+}: {
+  "issuer-directory-uri": string;
+}): Promise<TransformResult> => {
   let response: Response;
   try {
     response = await proxyFetch(url);
@@ -116,21 +129,27 @@ const fetchIssuers = async ({ "issuer-directory-uri": url }: { "issuer-directory
     }),
   );
   out.push(JSON.stringify(issuers, null, 2));
-  return new TransformResult(
-    out.join("\n"),
-    {
-      "type": issuers["token-keys"].map((key) => key["token-type"].toString()),
-      "key": issuers["token-keys"].map((key) => key["token-key"]),
-      "issuer-name": issuers["token-keys"].map(() => new URL(url).host),
-      "issuer-request-uri": issuers["token-keys"].map(() => `${new URL(url).origin}${issuers["issuer-request-uri"]}`), // note this won't work if issuer-request-uri is absolute
-    }
-  );
+  return new TransformResult(out.join("\n"), {
+    type: issuers["token-keys"].map((key) => key["token-type"].toString()),
+    key: issuers["token-keys"].map((key) => key["token-key"]),
+    "issuer-name": issuers["token-keys"].map(() => new URL(url).host),
+    "issuer-request-uri": issuers["token-keys"].map(
+      () => `${new URL(url).origin}${issuers["issuer-request-uri"]}`,
+    ), // note this won't work if issuer-request-uri is absolute
+  });
 };
 
-const createChallenge = async (
-  { type: types, key: keys, "issuer-name": names }: { type: string[], key: string[], "issuer-name": string[], },
-): Promise<TransformResult> => {
-  let issuers: { tokenType: number, name: string; publicKey: Uint8Array }[] = [];
+const createChallenge = async ({
+  type: types,
+  key: keys,
+  "issuer-name": names,
+}: {
+  type: string[];
+  key: string[];
+  "issuer-name": string[];
+}): Promise<TransformResult> => {
+  let issuers: { tokenType: number; name: string; publicKey: Uint8Array }[] =
+    [];
   for (let i = 0; i < keys.length; i += 1) {
     const tokenType = Number.parseInt(types[i]);
     const publicKey = keys[i];
@@ -138,7 +157,11 @@ const createChallenge = async (
     if (publicKey === "") {
       continue;
     }
-    issuers.push({ tokenType, name, publicKey: b64Tou8(b64URLtoB64(publicKey)) });
+    issuers.push({
+      tokenType,
+      name,
+      publicKey: b64Tou8(b64URLtoB64(publicKey)),
+    });
   }
 
   let out: string[] = [];
@@ -151,15 +174,19 @@ const createChallenge = async (
       redemptionContext,
       originInfo,
     );
-    const privateToken = new PrivateToken(tokChl, issuer.publicKey);
+    const privateToken = new WWWAuthenticateHeader(tokChl, issuer.publicKey);
     out.push(privateToken.toString(true));
   }
   const challenge = out.join(", ");
   return new TransformResult(challenge, { challenge });
 };
 
-const challengeParse = async ({ challenge }: { challenge: string }): Promise<TransformResult> => {
-  const tokens = PrivateToken.parse(challenge);
+const challengeParse = async ({
+  challenge,
+}: {
+  challenge: string;
+}): Promise<TransformResult> => {
+  const tokens = WWWAuthenticateHeader.parse(challenge);
   const infos = await Promise.all(
     tokens.map(async (token) => ({
       challenge: {
@@ -182,9 +209,11 @@ const challengeParse = async ({ challenge }: { challenge: string }): Promise<Tra
   return new TransformResult(JSON.stringify(infos, null, 2));
 };
 
-const challengeTrigger = async (
-  { challenge }: { challenge: string },
-): Promise<TransformResult> => {
+const challengeTrigger = async ({
+  challenge,
+}: {
+  challenge: string;
+}): Promise<TransformResult> => {
   try {
     const API_REPLAY_DELAY_IN_MS = 100;
     const API_REPLAY_HEADER = "private-token-client-replay";
@@ -223,15 +252,26 @@ const challengeTrigger = async (
   }
 };
 
-const tokenRequest = async ({ key: pk, "issuer-request-uri": url, challenge }: { key: string, "issuer-request-uri": string, challenge: string }) => {
-  const tokens = PrivateToken.parse(challenge);
+const tokenRequest = async ({
+  key: pk,
+  "issuer-request-uri": url,
+  challenge,
+}: {
+  key: string;
+  "issuer-request-uri": string;
+  challenge: string;
+}) => {
+  const tokens = WWWAuthenticateHeader.parse(challenge);
   const publicKey = await parsePublicKey(pk); // always the public key of the first token
   for (const token of tokens) {
     const result: string[] = [];
-    const client = new Client();
+    const client = new publicVerif.Client(publicVerif.BlindRSAMode.PSS);
     let validToken: Token;
     try {
-      const request = await client.createTokenRequest(token);
+      const request = await client.createTokenRequest(
+        token.challenge,
+        token.tokenKey,
+      );
       const response = await proxyFetch(url, {
         method: "POST",
         headers: {
@@ -241,24 +281,32 @@ const tokenRequest = async ({ key: pk, "issuer-request-uri": url, challenge }: {
         body: request.serialize(),
       });
 
-      const tokenResponse = TokenResponse.deserialize(
+      const tokenResponse = publicVerif.TokenResponse.deserialize(
         new Uint8Array(await response.arrayBuffer()),
       );
       validToken = await client.finalize(tokenResponse);
       result.push(
-        `Draft 16 Valid: ${(await validToken.verify(publicKey)) &&
-        response.headers.get("Content-Type") ===
-        MediaType.PRIVATE_TOKEN_RESPONSE
+        `Draft 16 Valid: ${
+          (await publicVerif.verifyToken(
+            publicVerif.BlindRSAMode.PSS,
+            validToken,
+            publicKey,
+          )) &&
+          response.headers.get("Content-Type") ===
+            MediaType.PRIVATE_TOKEN_RESPONSE
         }`,
       );
-      result.push(validToken.toString());
+      result.push(new AuthorizationHeader(validToken).toString(true));
     } catch (e) {
       return new TransformResult(e.message);
     }
 
     // Test old protocol which has not been standardised
     try {
-      const request = await client.createTokenRequest(token);
+      const request = await client.createTokenRequest(
+        token.challenge,
+        token.tokenKey,
+      );
       const oldProtocolResponse = await proxyFetch(url, {
         method: "POST",
         headers: {
@@ -268,14 +316,19 @@ const tokenRequest = async ({ key: pk, "issuer-request-uri": url, challenge }: {
         body: request.serialize(),
       });
 
-      const tokenResponse = TokenResponse.deserialize(
+      const tokenResponse = publicVerif.TokenResponse.deserialize(
         new Uint8Array(await oldProtocolResponse.arrayBuffer()),
       );
       const validOldToken = await client.finalize(tokenResponse);
       result.push(
-        `Draft 2 Valid: ${(await validOldToken.verify(publicKey)) &&
-        oldProtocolResponse.headers.get("Content-Type") ===
-        "message/token-response"
+        `Draft 2 Valid: ${
+          (await publicVerif.verifyToken(
+            publicVerif.BlindRSAMode.PSS,
+            validOldToken,
+            publicKey,
+          )) &&
+          oldProtocolResponse.headers.get("Content-Type") ===
+            "message/token-response"
         }`,
       );
     } catch (e) {
@@ -283,22 +336,24 @@ const tokenRequest = async ({ key: pk, "issuer-request-uri": url, challenge }: {
       // ignore if the old protocol is not supported
     }
 
-    return new TransformResult(result.join("\n"), { token: validToken.toString() });
+    return new TransformResult(result.join("\n"), {
+      token: new AuthorizationHeader(validToken).toString(true),
+    });
   }
 };
 
 const tokenParse = async ({ token }: { token: string }) => {
-  const t = Token.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
+  const t = AuthorizationHeader.parse(TOKEN_TYPES.BLIND_RSA, token)[0].token;
   if (!t) {
     return new TransformResult("Cannot parse token.");
   }
   return new TransformResult(
     JSON.stringify(
       {
-        "token-type": t.payload.tokenType,
-        "token-key-id": b64ToB64URL(u8ToB64(t.payload.tokenKeyId)),
-        nonce: b64ToB64URL(u8ToB64(t.payload.nonce)),
-        challengeDigest: b64ToB64URL(u8ToB64(t.payload.challengeDigest)),
+        "token-type": t.authInput.tokenType,
+        "token-key-id": b64ToB64URL(u8ToB64(t.authInput.tokenKeyId)),
+        nonce: b64ToB64URL(u8ToB64(t.authInput.nonce)),
+        challengeDigest: b64ToB64URL(u8ToB64(t.authInput.challengeDigest)),
         authenticator: b64ToB64URL(u8ToB64(t.authenticator)),
       },
       null,
@@ -307,11 +362,26 @@ const tokenParse = async ({ token }: { token: string }) => {
   );
 };
 
-const tokenVerify = async ({ key: pk, token }: { key: string, token: string }) => {
+const tokenVerify = async ({
+  key: pk,
+  token,
+}: {
+  key: string;
+  token: string;
+}) => {
   const publicKey = await parsePublicKey(pk);
-  const responseToken = Token.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
+  const responseToken = AuthorizationHeader.parse(
+    TOKEN_TYPES.BLIND_RSA,
+    token,
+  )[0].token;
 
-  if (await responseToken.verify(publicKey)) {
+  if (
+    await publicVerif.verifyToken(
+      publicVerif.BlindRSAMode.PSS,
+      responseToken,
+      publicKey,
+    )
+  ) {
     return new TransformResult("Token matches the public key.");
   }
   return new TransformResult("Token does not match the public key.");
