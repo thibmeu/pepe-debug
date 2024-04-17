@@ -1,5 +1,7 @@
 import {
   AuthorizationHeader,
+  Extension,
+  Extensions,
   IssuerConfig,
   MediaType,
   TOKEN_TYPES,
@@ -7,10 +9,23 @@ import {
   TokenChallenge,
   WWWAuthenticateHeader,
   header_to_token,
+  privateVerif,
   publicVerif,
   util,
 } from "@cloudflare/privacypass-ts";
 import * as asn1 from "asn1js";
+
+const hex_decode = (s: string) => {
+  if (s.startsWith("0x")) {
+    s = s.slice(2);
+  }
+  return Uint8Array.from(s.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+};
+
+const hex_encode = (u: Uint8Array) =>
+  Array.from(u)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
 const u8ToB64 = (u: Uint8Array): string => btoa(String.fromCharCode(...u));
 
@@ -256,22 +271,83 @@ const tokenRequest = async ({
   key: pk,
   "issuer-request-uri": url,
   challenge,
+  extensions: extensionsRaw,
 }: {
   key: string;
   "issuer-request-uri": string;
   challenge: string;
+  extensions: string;
 }) => {
+  console.log("========", pk, url, challenge, extensionsRaw);
   const tokens = WWWAuthenticateHeader.parse(challenge);
+  const extensions =
+    extensionsRaw !== ""
+      ? Extensions.deserialize(b64Tou8(b64URLtoB64(extensionsRaw)))
+      : null;
   const publicKey = await parsePublicKey(pk); // always the public key of the first token
   for (const token of tokens) {
     const result: string[] = [];
-    const client = new publicVerif.Client(publicVerif.BlindRSAMode.PSS);
+    const getTokenType = (tokenType: number) =>
+      Object.values(TOKEN_TYPES).find((x) => x.value === tokenType)!;
+    const tokenType = getTokenType(token.challenge.tokenType);
+
+    let client: {
+      createTokenRequest: (
+        ...params: Parameters<publicVerif.Client["createTokenRequest"]>
+      ) => Promise<{ serialize: publicVerif.TokenRequest["serialize"] }>;
+      finalize: publicVerif.Client["finalize"];
+    };
+    let origin: Pick<publicVerif.Origin, "verify">;
+    if (tokenType.publicVerifiable) {
+      if (tokenType.publicMetadata) {
+        if (extensions === null) {
+          return new TransformResult(
+            `Extension must be defined for token type ${token.challenge.tokenType}`,
+          );
+        }
+        const _client = new publicVerif.ClientWithMetadata(
+          publicVerif.PartiallyBlindRSAMode.PSS,
+          extensions,
+        );
+        client = {
+          createTokenRequest(...params) {
+            return _client.createTokenRequest.bind(_client)(...params);
+          },
+          finalize(...params) {
+            return _client.finalize.bind(_client)(...params);
+          },
+        };
+        origin = new publicVerif.OriginWithMetadata(
+          publicVerif.PartiallyBlindRSAMode.PSS,
+          extensions,
+        );
+      } else {
+        const _client = new publicVerif.Client(publicVerif.BlindRSAMode.PSS);
+        client = {
+          createTokenRequest: (...params) =>
+            _client.createTokenRequest.bind(_client)(...params),
+          finalize(...params) {
+            return _client.finalize.bind(_client)(...params);
+          },
+        };
+        origin = new publicVerif.Origin(publicVerif.BlindRSAMode.PSS);
+      }
+    } else {
+      if (tokenType.privateMetadata) {
+        return notImplemented();
+      } else {
+        return notImplemented();
+      }
+    }
     let validToken: Token;
     try {
       const request = await client.createTokenRequest(
         token.challenge,
         token.tokenKey,
       );
+      console.log(request);
+
+      // console.log("________", request.serialize());
       const response = await proxyFetch(url, {
         method: "POST",
         headers: {
@@ -284,14 +360,12 @@ const tokenRequest = async ({
       const tokenResponse = publicVerif.TokenResponse.deserialize(
         new Uint8Array(await response.arrayBuffer()),
       );
+      console.log('finalizeToken')
       validToken = await client.finalize(tokenResponse);
+      console.log('====== validToken', validToken)
       result.push(
         `Draft 16 Valid: ${
-          (await publicVerif.verifyToken(
-            publicVerif.BlindRSAMode.PSS,
-            validToken,
-            publicKey,
-          )) &&
+          (await origin.verify(validToken, publicKey)) &&
           response.headers.get("Content-Type") ===
             MediaType.PRIVATE_TOKEN_RESPONSE
         }`,
@@ -322,11 +396,7 @@ const tokenRequest = async ({
       const validOldToken = await client.finalize(tokenResponse);
       result.push(
         `Draft 2 Valid: ${
-          (await publicVerif.verifyToken(
-            publicVerif.BlindRSAMode.PSS,
-            validOldToken,
-            publicKey,
-          )) &&
+          (await origin.verify(validOldToken, publicKey)) &&
           oldProtocolResponse.headers.get("Content-Type") ===
             "message/token-response"
         }`,
@@ -343,10 +413,13 @@ const tokenRequest = async ({
 };
 
 const tokenParse = async ({ token }: { token: string }) => {
-  const t = AuthorizationHeader.parse(TOKEN_TYPES.BLIND_RSA, token)[0].token;
+  const header = AuthorizationHeader.parse(TOKEN_TYPES.BLIND_RSA, token)[0];
+  let { token: t, extensions } = header;
   if (!t) {
     return new TransformResult("Cannot parse token.");
   }
+  const encoded = extensions?.serialize();
+  const e = encoded ? b64ToB64URL(u8ToB64(encoded)) : "";
   return new TransformResult(
     JSON.stringify(
       {
@@ -359,6 +432,9 @@ const tokenParse = async ({ token }: { token: string }) => {
       null,
       2,
     ),
+    {
+      extensions: e,
+    },
   );
 };
 
@@ -375,16 +451,62 @@ const tokenVerify = async ({
     token,
   )[0].token;
 
-  if (
-    await publicVerif.verifyToken(
-      publicVerif.BlindRSAMode.PSS,
-      responseToken,
-      publicKey,
-    )
-  ) {
+  const origin = new publicVerif.Origin(publicVerif.BlindRSAMode.PSS);
+
+  if (await origin.verify(responseToken, publicKey)) {
     return new TransformResult("Token matches the public key.");
   }
   return new TransformResult("Token does not match the public key.");
+};
+
+const createExtensions = async ({
+  "extension-type": types,
+  "extension-info": infos,
+}: {
+  "extension-type": string[];
+  "extension-info": string[];
+}) => {
+  const extensionsArray: Extension[] = [];
+  for (let i = 0; i < types.length; i += 1) {
+    const type = types[i];
+    const info = infos[i];
+    if (type === "" || info === "") {
+      continue;
+    }
+    extensionsArray.push(
+      new Extension(Number.parseInt(type), hex_decode(info)),
+    );
+  }
+  const extensions = new Extensions(extensionsArray);
+  const encoded = b64ToB64URL(u8ToB64(extensions.serialize()));
+  return new TransformResult(encoded, { extensions: encoded });
+};
+
+const extensionsParse = async ({
+  extensions: extensionsRaw,
+}: {
+  extensions: string;
+}) => {
+  const decoded = b64Tou8(b64URLtoB64(extensionsRaw));
+  const extensions = Extensions.deserialize(decoded);
+  return new TransformResult(
+    JSON.stringify(
+      extensions.extensions.map((v) => ({
+        type: v.extensionType,
+        info: hex_encode(v.extensionData),
+      })),
+      null,
+      2,
+    ),
+    {
+      "extensions-type": extensions.extensions.map((v) =>
+        v.extensionType.toString(),
+      ),
+      "extensions-info": extensions.extensions.map((v) =>
+        hex_encode(v.extensionData),
+      ),
+    },
+  );
 };
 
 const challengeDebug = async ({ challenge }: { challenge: string }) => {
@@ -403,6 +525,8 @@ const onload = () => {
     tokenRequest,
     tokenParse,
     tokenVerify,
+    createExtensions,
+    extensionsParse,
     challengeDebug,
     notImplemented,
   });

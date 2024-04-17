@@ -48,11 +48,11 @@
             </p>
 
             <form>
-                <select name="type">
+                <select name="type" onchange="handleTokenTypeChange(this.value)">
                     <option disabled selected value> -- token type -- </option>
                     <option disabled value="1">0x0001</option>
                     <option value="2">0x0002</option>
-                    <option disabled value="55930">0xda7a</option>
+                    <option value="55930">0xda7a</option>
                 </select>
                 <input name="key" placeholder="MIIBIjA..." required />
                 <button>Submit</button>
@@ -67,29 +67,29 @@
             </p>
 
             <form>
-                <select name="type">
+                <select name="type" onchange="handleTokenTypeChange(this.value)">
                     <option disabled selected value> -- token type -- </option>
                     <option disabled value="1">0x0001</option>
                     <option value="2">0x0002</option>
-                    <option disabled value="55930">0xda7a</option>
+                    <option value="55930">0xda7a</option>
                 </select>
                 <input name="key" placeholder="MIIBIjA...1" required />
                 <input name="issuer-name" placeholder="example.com" required />
                 <br />
-                <select name="type">
+                <select name="type" onchange="handleTokenTypeChange(this.value)">
                     <option disabled selected value> -- token type -- </option>
                     <option disabled value="1">0x0001</option>
                     <option value="2">0x0002</option>
-                    <option disabled value="55930">0xda7a</option>
+                    <option value="55930">0xda7a</option>
                 </select>
                 <input name="key" placeholder="MIIBIjA...2" />
                 <input name="issuer-name" placeholder="example.com" />
                 <br />
-                <select name="type">
+                <select name="type" onchange="handleTokenTypeChange(this.value)">
                     <option disabled selected value> -- token type -- </option>
                     <option disabled value="1">0x0001</option>
                     <option value="2">0x0002</option>
-                    <option disabled value="55930">0xda7a</option>
+                    <option value="55930">0xda7a</option>
                 </select>
                 <input name="key" placeholder="MIIBIjA...3" />
                 <input name="issuer-name" placeholder="example.com" />
@@ -138,6 +138,7 @@
                 <input name="issuer-request-uri" placeholder="https://example.com/token-request" required />
                 <br />
                 <input name="challenge" placeholder="PrivateToken challenge=..." required />
+                <input name="extensions" placeholder="def==" required />
                 <button>Submit</button>
             </form>
 
@@ -172,11 +173,63 @@
 
             <code class="display"></code>
         </section>
+        <section id="extensions-builder">
+            <h2>Build extensions</h2>
+            <p>
+                Create public metadata to be associated with issuance. Info has to be hex encoded.
+            </p>
+
+            <form>
+                <input name="extension-type" placeholder="1" type="number" min="0" max="65535" required />
+                <input name="extension-info" placeholder="0x0001" required />
+                <br />
+                <input name="extension-type" placeholder="1" type="number" min="0" max="65535" />
+                <input name="extension-info" placeholder="0x0001" />
+                <br />
+                <input name="extension-type" placeholder="1" type="number" min="0" max="65535" />
+                <input name="extension-info" placeholder="0x0001" />
+                <button>Submit</button>
+            </form>
+
+            <code class="display"></code>
+        </section>
+        <section id="extensions-inspect">
+            <h2>Inspect extensions</h2>
+            <p>
+                If you inspect HTTP request in your network tab, and want to copy/paste Authorization header to understand what's inside. 
+            </p>
+
+            <form>
+                <input name="extensions" placeholder="def==" required />
+                <button>Submit</button>
+            </form>
+
+            <code class="display"></code>
+        </section>
     </main>
     <footer>
         <p>Built and developed by <a href="https://github.com/thibmeu">thibmeu</a></p>
     </footer>
     <script>
+        const handleTokenTypeChange = (tokenType) => {
+            tokenType = Number.parseInt(tokenType)
+            const extensions = [
+                ...document.querySelectorAll('#extensions-builder'),
+                ...document.querySelectorAll('#extensions-inspect'),
+                ...document.querySelectorAll('[name="extensions"]'),
+            ]
+            const show = (el) => { el.removeAttribute('hidden'); el.setAttribute('required', 'required') }
+            const hide = (el) => { el.setAttribute('hidden', 'hidden'); el.removeAttribute('required') }
+
+            let toApply = hide;
+            switch (tokenType) {
+                case 0xda7a:
+                    toApply = show
+                    break
+            }
+            extensions.map(el => toApply(el))
+        }
+
         const autofill = (id) => (values) => {
             const section = document.querySelector(`section#${id}`)
             const form = section.querySelector('form')
@@ -221,7 +274,7 @@
 
                 const section = document.querySelector(`section#${id}`)
                 const form = section.querySelector('form')
-                const inputArr = Array.from(form.querySelectorAll('input:not([type="hidden"]), select')).map(e => [e.getAttribute('name'), e.value])
+                const inputArr = Array.from(form.querySelectorAll('input:not([type="hidden"]), select, input:not([hidden])')).map(e => [e.getAttribute('name'), e.value])
                 const input = {}
                 for (const [key, value] of inputArr) {
                     if (input.hasOwnProperty(key)) {
@@ -251,6 +304,9 @@
             setup('request', tokenRequest, ['token', 'check-token'])
             setup('token', tokenParse)
             setup('check-token', tokenVerify)
+            setup('extensions-builder', createExtensions, ['request', 'extensions-inspect'])
+            setup('extensions-inspect', extensionsParse, ['extensions-builder'])
+            handleTokenTypeChange(null)
         }
 
         window.addEventListener('load', onload)

@@ -26,7 +26,7 @@
     "start": "concurrently \"npm:build:watch\" \"npm:serve:watch\" \"sleep 1 && open http://localhost:3000\""
   },
   "dependencies": {
-    "@cloudflare/privacypass-ts": "0.5.1",
+    "@cloudflare/privacypass-ts": "file:./vendor/cloudflare-privacypass-ts-0.6.0.tgz",
     "asn1js": "^3.0.5"
   },
   "devDependencies": {
