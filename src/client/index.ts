@@ -57,6 +57,8 @@ const proxyFetch = (url: string, init?: RequestInit) => {
   return fetch(request, params);
 };
 
+const originInfo = () => [new URL(window.origin).host];
+
 const parsePublicKey = async (pk: string): Promise<CryptoKey> => {
   const pkEnc = b64Tou8(b64URLtoB64(pk));
   const spkiEncoded = util.convertRSASSAPSSToEnc(pkEnc);
@@ -167,12 +169,11 @@ const createChallenge = async ({
   let out: string[] = [];
   for (const issuer of issuers) {
     const redemptionContext = crypto.getRandomValues(new Uint8Array(32));
-    const originInfo = [new URL(window.origin).host];
     const tokChl = new TokenChallenge(
       issuer.tokenType,
       issuer.name,
       redemptionContext,
-      originInfo,
+      originInfo(),
     );
     const privateToken = new WWWAuthenticateHeader(tokChl, issuer.publicKey);
     out.push(privateToken.toString(true));
@@ -188,23 +189,25 @@ const challengeParse = async ({
 }): Promise<TransformResult> => {
   const tokens = WWWAuthenticateHeader.parse(challenge);
   const infos = await Promise.all(
-    tokens.map(async (token) => ({
-      challenge: {
-        tokenType: token.challenge.tokenType,
-        name: token.challenge.issuerName,
-        origin: token.challenge.originInfo,
-        redemptionContext: b64ToB64URL(
-          u8ToB64(token.challenge.redemptionContext),
-        ),
-      },
-      tokenKey: b64ToB64URL(u8ToB64(token.tokenKey)),
-      tokenKeyId: b64ToB64URL(
-        u8ToB64(
-          new Uint8Array(await crypto.subtle.digest("SHA-256", token.tokenKey)),
-        ),
-      ),
-      maxAge: token.maxAge,
-    })),
+    tokens.map(async (token) => {
+      const tokenKeyId = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", token.tokenKey),
+      );
+      return {
+        challenge: {
+          tokenType: token.challenge.tokenType,
+          name: token.challenge.issuerName,
+          origin: token.challenge.originInfo,
+          redemptionContext: b64ToB64URL(
+            u8ToB64(token.challenge.redemptionContext),
+          ),
+        },
+        tokenKey: b64ToB64URL(u8ToB64(token.tokenKey)),
+        tokenKeyId: b64ToB64URL(u8ToB64(tokenKeyId)),
+        truncatedTokenKeyId: tokenKeyId[tokenKeyId.length - 1],
+        maxAge: token.maxAge,
+      };
+    }),
   );
   return new TransformResult(JSON.stringify(infos, null, 2));
 };
@@ -261,6 +264,10 @@ const tokenRequest = async ({
   "issuer-request-uri": string;
   challenge: string;
 }) => {
+  const origin = new publicVerif.Origin(
+    publicVerif.BlindRSAMode.PSS,
+    originInfo(),
+  );
   const tokens = WWWAuthenticateHeader.parse(challenge);
   const publicKey = await parsePublicKey(pk); // always the public key of the first token
   for (const token of tokens) {
@@ -287,11 +294,7 @@ const tokenRequest = async ({
       validToken = await client.finalize(tokenResponse);
       result.push(
         `Draft 16 Valid: ${
-          (await publicVerif.verifyToken(
-            publicVerif.BlindRSAMode.PSS,
-            validToken,
-            publicKey,
-          )) &&
+          (await origin.verify(validToken, publicKey)) &&
           response.headers.get("Content-Type") ===
             MediaType.PRIVATE_TOKEN_RESPONSE
         }`,
@@ -322,11 +325,7 @@ const tokenRequest = async ({
       const validOldToken = await client.finalize(tokenResponse);
       result.push(
         `Draft 2 Valid: ${
-          (await publicVerif.verifyToken(
-            publicVerif.BlindRSAMode.PSS,
-            validOldToken,
-            publicKey,
-          )) &&
+          (await origin.verify(validOldToken, publicKey)) &&
           oldProtocolResponse.headers.get("Content-Type") ===
             "message/token-response"
         }`,
@@ -375,13 +374,12 @@ const tokenVerify = async ({
     token,
   )[0].token;
 
-  if (
-    await publicVerif.verifyToken(
-      publicVerif.BlindRSAMode.PSS,
-      responseToken,
-      publicKey,
-    )
-  ) {
+  const origin = new publicVerif.Origin(
+    publicVerif.BlindRSAMode.PSS,
+    originInfo(),
+  );
+
+  if (await origin.verify(responseToken, publicKey)) {
     return new TransformResult("Token matches the public key.");
   }
   return new TransformResult("Token does not match the public key.");
